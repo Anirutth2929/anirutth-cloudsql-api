@@ -1,41 +1,42 @@
-from flask import Flask, jsonify
-import os
+from flask import Flask, jsonify, request
 import pymysql
+import os
 
 app = Flask(__name__)
 
-
 @app.route("/users", methods=["GET"])
-def get_users():
-    # Read config from ENV variables
-    db_user = os.environ["DB_USER"]
-    db_password = os.environ["DB_PASSWORD"]
-    db_name = os.environ["DB_NAME"]
-    instance_connection_name = os.environ["INSTANCE_CONNECTION_NAME"]
+def get_user_by_name():
+    name = request.args.get("name")
 
-    # Connect to Cloud SQL
-    connection = pymysql.connect(
-        user=db_user,
-        password=db_password,
-        unix_socket=f"/cloudsql/{instance_connection_name}",
-        database=db_name,
-        cursorclass=pymysql.cursors.DictCursor
-    )
+    if not name:
+        return {"error": "name query parameter is required"}, 400
 
-    cursor = connection.cursor()
-    cursor.execute("SELECT id, name, email FROM users")
-    rows = cursor.fetchall()
+    try:
+        conn = pymysql.connect(
+            user=os.environ["DB_USER"],
+            password=os.environ["DB_PASSWORD"],
+            unix_socket=f"/cloudsql/{os.environ['INSTANCE_CONNECTION_NAME']}",
+            database=os.environ["DB_NAME"]
+        )
 
-    cursor.close()
-    connection.close()
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
 
-    return jsonify(rows)
+        query = "SELECT id FROM users WHERE name = %s"
+        cursor.execute(query, (name,))
+        result = cursor.fetchone()
 
+        cursor.close()
+        conn.close()
 
-@app.route("/")
-def health():
-    return {"status": "API is running"}
+        if result:
+            return jsonify(result), 200
+        else:
+            return {"message": "User not found"}, 404
+
+    except Exception as e:
+        return {"error": str(e)}, 500
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
